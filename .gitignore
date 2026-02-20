@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.env
+*.tfstate
+*.tfstate.backup
+.terraform/
+*.log
+venv/
+.venv/
+oci_mcp_server.log
+.aider*
