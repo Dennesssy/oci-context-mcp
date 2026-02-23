@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "oci-context-mcp"
+version = "2.1.0"
+description = "MCP server giving AI agents read access to Oracle Cloud Infrastructure (28 tools)"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+keywords = ["oracle", "oci", "mcp", "model-context-protocol", "claude", "llm"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "fastapi>=0.115.6",
+    "uvicorn[standard]>=0.34.0",
+    "mcp[server]>=1.0.0",
+    "oci>=2.167.2",
+    "pydantic>=2.10.3",
+    "python-dotenv>=1.0.1",
+    "loguru>=0.7.3",
+    "httpx>=0.28.1",
+    "click>=8.1.0",
+]
+
+[project.scripts]
+oci-mcp = "mcp_server:cli"
+
+[project.urls]
+Homepage = "https://github.com/oracle/oci-context-mcp"
+Repository = "https://github.com/oracle/oci-context-mcp"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+include = ["mcp_server.py"]
