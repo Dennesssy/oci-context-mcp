@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "oci-context-mcp"
 version = "2.5.0"
-description = "MCP server giving AI agents read access to Oracle Cloud Infrastructure (28 tools)"
+description = "MCP server giving AI agents read access to Oracle Cloud Infrastructure (69 tools across 22 services)"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
@@ -31,8 +31,8 @@ dependencies = [
 oci-mcp = "mcp_server:cli"
 
 [project.urls]
-Homepage = "https://github.com/oracle/oci-context-mcp"
-Repository = "https://github.com/oracle/oci-context-mcp"
+Homepage = "https://github.com/Dennesssy/oci-context-mcp"
+Repository = "https://github.com/Dennesssy/oci-context-mcp"
 
 [tool.hatch.build.targets.wheel]
 packages = ["."]
