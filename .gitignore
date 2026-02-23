@@ -9,4 +9,13 @@ venv/
 .venv/
 oci_mcp_server.log
 oci_mcp_metrics.jsonl
+# aider artefacts — never commit these
 .aider*
+aider-instructions.md
+aidergoss-output.log
+PART1-*.md
+PART2-*.md
+PART3-*.md
+# terraform secrets
+*.tfvars
+*.auto.tfvars

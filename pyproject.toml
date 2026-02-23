@@ -37,3 +37,7 @@ Repository = "https://github.com/oracle/oci-context-mcp"
 [tool.hatch.build.targets.wheel]
 packages = ["."]
 include = ["mcp_server.py"]
+
+[tool.oci-mcp.dev]
+# Run after cloning: git config core.hooksPath .githooks
+hooks_path = ".githooks"

@@ -1,0 +1,25 @@
+#!/bin/sh
+# OCI Secrets Scanner — pre-push hook
+# Blocks pushes containing CRITICAL secrets (real OCIDs, PEM keys, fingerprints, etc.)
+#
+# Install once per clone:
+#   git config core.hooksPath .githooks
+#
+# Skip in emergencies (never do this in prod):
+#   git push --no-verify
+
+SCANNER="scripts/scan_secrets.py"
+
+if [ ! -f "$SCANNER" ]; then
+    echo "scan_secrets: scanner not found at $SCANNER — skipping."
+    exit 0
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "scan_secrets: python3 not found — skipping."
+    exit 0
+fi
+
+echo "scan_secrets: scanning staged changes for secrets..."
+python3 "$SCANNER"
+exit $?
