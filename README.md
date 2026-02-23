@@ -1,6 +1,6 @@
 # Oracle Context MCP Server
 
-Production-ready OCI MCP (Model Context Protocol) server with **38 tools** across 12 OCI services. Gives AI agents (Claude Desktop, Cursor, VS Code, OCI GenAI) secure, natural-language access to your Oracle Cloud Infrastructure.
+Production-ready OCI MCP (Model Context Protocol) server with **69 tools** across 22 OCI services. Gives AI agents (Claude Desktop, Cursor, VS Code, OCI GenAI) secure, natural-language access to your Oracle Cloud Infrastructure.
 
 ## One-Line Install (Claude Desktop / Cursor)
 
@@ -126,7 +126,20 @@ terraform apply -var-file=terraform.tfvars
 | Usage / Cost | get_usage_summary | 1 |
 | Vault & Secrets | list_vaults, list_secrets | 2 |
 | NSG & Load Balancers | list_network_security_groups, list_load_balancers | 2 |
-| **TOTAL** | | **37** |
+| Compute Extended | list_images*, list_boot_volumes*, list_instance_configurations* | 3 |
+| Networking Extended | list_internet_gateways*, list_nat_gateways*, list_service_gateways*, list_drgs* | 4 |
+| OKE & Containers | list_clusters*, list_node_pools*, list_container_instances*, list_container_repos* | 4 |
+| Functions | list_applications*, list_functions, get_function | 3 |
+| Events & Notifications | list_event_rules*, list_notification_topics*, list_notification_subscriptions* | 3 |
+| DNS | list_dns_zones*, list_dns_zone_records, list_steering_policies* | 3 |
+| Budgets | list_budgets, get_budget | 2 |
+| Audit | list_audit_events | 1 |
+| API Gateway | list_api_gateways*, list_api_deployments* | 2 |
+| Bastion | list_bastions*, list_bastion_sessions | 2 |
+| MySQL & NoSQL | list_mysql_db_systems*, list_nosql_tables* | 2 |
+| DevOps | list_devops_projects* | 1 |
+| Telemetry | get_metrics_summary | 1 |
+| **TOTAL** | | **69** |
 
 `*` supports `compartment_scope`: `single` (default) \| `recursive` \| `tenancy`
 
@@ -236,6 +249,7 @@ See [BUILD_PLAN.md](BUILD_PLAN.md) for the full F1–F7 roadmap toward parity wi
 - [x] F1: STDIO transport + `uvx oci-context-mcp` packaging (v2.1)
 - [x] F2: IAM compartment tree traversal (recursive multi-compartment) (v2.2)
 - [x] F3: Monitoring (metrics, alarms, log search) (v2.3)
+- [x] 69 tools across 22 OCI services (v2.5)
 - [ ] F4: Write operations with confirmation + rollback
 - [ ] F5: Multi-region fan-out
 - [ ] F6: Plugin SDK for custom tools
