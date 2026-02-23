@@ -1,3 +1,8 @@
+> **MCPMarketplace.dev — Coming Soon.**
+> The central directory for production MCP servers. This server will be listed at launch.
+
+---
+
 # Oracle OCI Context MCP Server
 
 Production-ready, multi-tenant Model Context Protocol (MCP) server for Oracle Cloud Infrastructure. Gives AI agents (Claude, Cursor, VS Code, OCI GenAI) secure, natural-language access to any OCI tenancy — 69 tools across 22 services.
