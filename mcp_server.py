@@ -128,6 +128,9 @@ class OCIAuthManager:
         self.usage_client = oci.usage_api.UsageapiClient({}, signer=self.signer)
         self.vault_client = oci.vault.VaultsClient({}, signer=self.signer)
         self.lb_client = oci.load_balancer.LoadBalancerClient({}, signer=self.signer)
+        self.monitoring_client = oci.monitoring.MonitoringClient({}, signer=self.signer)
+        self.logging_client = oci.logging.LoggingManagementClient({}, signer=self.signer)
+        self.log_search_client = oci.loggingsearch.LogSearchClient({}, signer=self.signer)
 
     def validate_iam_access(self, action: str = "read"):
         """IAM validation hook"""
@@ -163,8 +166,8 @@ async def server_health(ctx: Context) -> str:
     """Health check and IAM status."""
     return json.dumps({
         "status": "healthy",
-        "server": "Oracle Context MCP Server v2.1",
-        "tools": 30,
+        "server": "Oracle Context MCP Server v2.3",
+        "tools": 37,
         "iam_mode": "InstancePrincipal" if auth_manager.using_instance_principal else "Config",
         "region": auth_manager.region,
         "compartment_id": auth_manager.compartment_id
@@ -531,7 +534,271 @@ async def get_usage_summary(ctx: Context, time_start: str, time_end: str) -> str
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# ====================== TOOL 25-26: NETWORK SECURITY GROUPS & LOAD BALANCERS ======================
+# ====================== TOOL 25-31: MONITORING & LOGGING (F3) ======================
+@mcp.tool()
+async def list_metric_namespaces(ctx: Context, compartment_scope: str = "single") -> str:
+    """List available OCI Monitoring metric namespaces (e.g. oci_computeagent, oci_lbaas).
+
+    compartment_scope: 'single' (default) | 'recursive' | 'tenancy'
+    """
+    try:
+        compartment_ids = await resolve_compartment_ids(compartment_scope)
+        namespaces: set = set()
+        for cid in compartment_ids:
+            try:
+                details = oci.monitoring.models.ListMetricsDetails()
+                resp = auth_manager.monitoring_client.list_metrics(
+                    compartment_id=cid,
+                    list_metrics_details=details,
+                ).data
+                for m in resp:
+                    namespaces.add(m.namespace)
+            except Exception:
+                pass
+        return json.dumps(sorted(namespaces))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@mcp.tool()
+async def query_metrics(
+    ctx: Context,
+    namespace: str,
+    metric_name: str,
+    time_start: str,
+    time_end: str,
+    interval: str = "PT5M",
+    statistic: str = "mean",
+    resource_id: Optional[str] = None,
+) -> str:
+    """Query OCI Monitoring time-series metrics.
+
+    namespace:   e.g. 'oci_computeagent'
+    metric_name: e.g. 'CpuUtilization'
+    time_start / time_end: ISO-8601 datetime strings
+    interval:    ISO-8601 duration, default PT5M (5 minutes)
+    statistic:   mean | max | min | sum | count
+    resource_id: optional OCID to filter to a single resource
+    """
+    try:
+        if resource_id:
+            query = f'{metric_name}[{interval}]{{resourceId = "{resource_id}"}}.{statistic}()'
+        else:
+            query = f"{metric_name}[{interval}].{statistic}()"
+        details = oci.monitoring.models.SummarizeMetricsDataDetails(
+            namespace=namespace,
+            query=query,
+            start_time=time_start,
+            end_time=time_end,
+        )
+        resp = auth_manager.monitoring_client.summarize_metrics_data(
+            compartment_id=auth_manager.compartment_id,
+            summarize_metrics_data_details=details,
+        ).data
+        return json.dumps([
+            {
+                "name": m.name,
+                "namespace": m.namespace,
+                "resource_group": getattr(m, "resource_group", None),
+                "datapoints": [
+                    {"timestamp": str(d.timestamp), "value": d.value}
+                    for d in m.aggregated_datapoints
+                ],
+            }
+            for m in resp
+        ], default=str)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@mcp.tool()
+async def list_alarms(
+    ctx: Context,
+    lifecycle_state: Optional[str] = None,
+    compartment_scope: str = "single",
+) -> str:
+    """List OCI Monitoring alarm definitions.
+
+    lifecycle_state: ACTIVE | INACTIVE (omit for all)
+    compartment_scope: 'single' (default) | 'recursive' | 'tenancy'
+    """
+    try:
+        compartment_ids = await resolve_compartment_ids(compartment_scope)
+        results = []
+        for cid in compartment_ids:
+            try:
+                kwargs = {"compartment_id": cid}
+                if lifecycle_state:
+                    kwargs["lifecycle_state"] = lifecycle_state
+                alarms = auth_manager.monitoring_client.list_alarms(**kwargs).data
+                results.extend([
+                    {
+                        "id": a.id,
+                        "name": a.display_name,
+                        "namespace": a.metric_compartment_id_in_subtree,
+                        "query": a.query,
+                        "severity": a.severity,
+                        "is_enabled": a.is_enabled,
+                        "lifecycle_state": a.lifecycle_state,
+                        "compartment_id": cid,
+                    }
+                    for a in alarms
+                ])
+            except Exception:
+                pass
+        return json.dumps(results, default=str)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@mcp.tool()
+async def get_alarm_status(ctx: Context, compartment_scope: str = "single") -> str:
+    """Get current firing status for all alarms (OK / FIRING / SUSPENDED).
+
+    compartment_scope: 'single' (default) | 'recursive' | 'tenancy'
+    """
+    try:
+        compartment_ids = await resolve_compartment_ids(compartment_scope)
+        results = []
+        for cid in compartment_ids:
+            try:
+                statuses = auth_manager.monitoring_client.list_alarms_status(
+                    compartment_id=cid).data
+                results.extend([
+                    {
+                        "id": s.id,
+                        "name": s.display_name,
+                        "status": s.status,
+                        "severity": s.severity,
+                        "compartment_id": cid,
+                    }
+                    for s in statuses
+                ])
+            except Exception:
+                pass
+        return json.dumps(results, default=str)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@mcp.tool()
+async def list_alarm_history(ctx: Context, alarm_id: str, hours: int = 24) -> str:
+    """List state-change history for a specific alarm.
+
+    alarm_id: OCID of the alarm
+    hours:    how far back to look (default 24)
+    """
+    try:
+        from datetime import timezone
+        end_time = datetime.now(timezone.utc)
+        start_time = end_time - timedelta(hours=hours)
+        history = auth_manager.monitoring_client.get_alarm_history(
+            alarm_id=alarm_id,
+            timestamp_greater_than_or_equal_to=start_time.isoformat(),
+        ).data
+        entries = getattr(history, "entries", [])
+        return json.dumps([
+            {
+                "timestamp": str(getattr(e, "timestamp", None)),
+                "summary": getattr(e, "summary", None),
+                "alarm_summary": getattr(e, "alarm_summary", None),
+            }
+            for e in entries
+        ], default=str)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@mcp.tool()
+async def list_log_groups(ctx: Context, compartment_scope: str = "single") -> str:
+    """List OCI Logging log groups.
+
+    compartment_scope: 'single' (default) | 'recursive' | 'tenancy'
+    """
+    try:
+        compartment_ids = await resolve_compartment_ids(compartment_scope)
+        results = []
+        for cid in compartment_ids:
+            try:
+                groups = auth_manager.logging_client.list_log_groups(
+                    compartment_id=cid).data
+                results.extend([
+                    {
+                        "id": g.id,
+                        "name": g.display_name,
+                        "compartment_id": cid,
+                        "time_created": str(g.time_created),
+                    }
+                    for g in groups
+                ])
+            except Exception:
+                pass
+        return json.dumps(results, default=str)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@mcp.tool()
+async def list_logs(ctx: Context, log_group_id: str) -> str:
+    """List individual logs within a log group.
+
+    log_group_id: OCID of the log group
+    """
+    try:
+        logs = auth_manager.logging_client.list_logs(log_group_id=log_group_id).data
+        return json.dumps([
+            {
+                "id": l.id,
+                "name": l.display_name,
+                "log_type": l.log_type,
+                "is_enabled": l.is_enabled,
+                "lifecycle_state": l.lifecycle_state,
+            }
+            for l in logs
+        ], default=str)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@mcp.tool()
+async def search_logs(
+    ctx: Context,
+    query: str,
+    time_start: str,
+    time_end: str,
+    limit: int = 100,
+) -> str:
+    """Search OCI Logging using the OCI Logging Query Language.
+
+    query:      OCI Logging search expression.
+                Example: 'search "ocid1.compartment.../logGroupId/logId" | where body like "ERROR"'
+    time_start / time_end: ISO-8601 datetime strings
+    limit:      max results to return (default 100)
+    """
+    try:
+        details = oci.loggingsearch.models.SearchLogsDetails(
+            time_start=time_start,
+            time_end=time_end,
+            search_query=query,
+            is_return_field_info=False,
+        )
+        resp = auth_manager.log_search_client.search_logs(
+            search_logs_details=details,
+            limit=limit,
+        ).data
+        results = getattr(resp, "results", [])
+        return json.dumps([
+            {
+                "time": str(getattr(r, "time", None)),
+                "log_content": getattr(r, "log_content", None),
+            }
+            for r in results
+        ], default=str)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ====================== TOOL 32-33: NETWORK SECURITY GROUPS & LOAD BALANCERS ======================
 @mcp.tool()
 async def list_network_security_groups(ctx: Context) -> str:
     """List Network Security Groups (NSGs)."""
@@ -584,11 +851,11 @@ mcp.mount(app, "/mcp")
 
 @app.get("/")
 async def root():
-    return {"message": "Oracle Context MCP Server v2.1", "tools": 30, "endpoint": "/mcp"}
+    return {"message": "Oracle Context MCP Server v2.3", "tools": 37, "endpoint": "/mcp"}
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "tools_count": 30, "iam": "InstancePrincipal" if auth_manager.using_instance_principal else "Config"}
+    return {"status": "healthy", "tools_count": 37, "iam": "InstancePrincipal" if auth_manager.using_instance_principal else "Config"}
 
 
 # ====================== CLI ENTRY POINT ======================
@@ -645,7 +912,7 @@ def cli(transport, port, host, print_config):
         mcp.run()  # FastMCP built-in STDIO transport
     else:
         import uvicorn
-        logger.info("Starting Oracle Context MCP Server (HTTP) with 30 tools on {}:{}", host, port)
+        logger.info("Starting Oracle Context MCP Server (HTTP) with 37 tools on {}:{}", host, port)
         uvicorn.run(app, host=host, port=port)
 
 

@@ -1,6 +1,6 @@
 # Oracle Context MCP Server
 
-Production-ready OCI MCP (Model Context Protocol) server with **30 tools** across 10 OCI services. Gives AI agents (Claude Desktop, Cursor, VS Code, OCI GenAI) secure, natural-language access to your Oracle Cloud Infrastructure.
+Production-ready OCI MCP (Model Context Protocol) server with **37 tools** across 12 OCI services. Gives AI agents (Claude Desktop, Cursor, VS Code, OCI GenAI) secure, natural-language access to your Oracle Cloud Infrastructure.
 
 ## One-Line Install (Claude Desktop / Cursor)
 
@@ -121,10 +121,12 @@ terraform apply -var-file=terraform.tfvars
 | Block & File Storage | list_block_volumes, list_file_systems | 2 |
 | Resource Search | search_resources | 1 |
 | Database | list_autonomous_databases*, list_db_systems* | 2 |
-| Monitoring | get_usage_summary | 1 |
+| Monitoring & Alarms | list_metric_namespaces*, query_metrics, list_alarms*, get_alarm_status*, list_alarm_history | 5 |
+| Logging | list_log_groups*, list_logs, search_logs | 3 |
+| Usage / Cost | get_usage_summary | 1 |
 | Vault & Secrets | list_vaults, list_secrets | 2 |
 | NSG & Load Balancers | list_network_security_groups, list_load_balancers | 2 |
-| **TOTAL** | | **30** |
+| **TOTAL** | | **37** |
 
 `*` supports `compartment_scope`: `single` (default) \| `recursive` \| `tenancy`
 
@@ -216,8 +218,8 @@ See [BUILD_PLAN.md](BUILD_PLAN.md) for the full F1–F7 roadmap toward parity wi
 ## Roadmap
 
 - [x] F1: STDIO transport + `uvx oci-context-mcp` packaging (v2.1)
-- [ ] F2: IAM compartment tree traversal (recursive multi-compartment)
-- [ ] F3: Monitoring (metrics, alarms, log search)
+- [x] F2: IAM compartment tree traversal (recursive multi-compartment) (v2.2)
+- [x] F3: Monitoring (metrics, alarms, log search) (v2.3)
 - [ ] F4: Write operations with confirmation + rollback
 - [ ] F5: Multi-region fan-out
 - [ ] F6: Plugin SDK for custom tools

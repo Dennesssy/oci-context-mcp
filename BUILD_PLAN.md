@@ -67,19 +67,19 @@ Tasks:
 Tasks:
 
 **Metrics (OCI Monitoring API):**
-- [ ] Add `monitoring_client = oci.monitoring.MonitoringClient`
-- [ ] `list_metric_namespaces(compartment_id)` — what metrics exist
-- [ ] `query_metrics(namespace, metric_name, start, end, interval, statistic)` — time-series data
-- [ ] `list_alarms(compartment_id, lifecycle_state)` — alarm definitions
-- [ ] `get_alarm_status(alarm_id)` — current firing state
-- [ ] `list_alarm_history(alarm_id, hours=24)` — recent state transitions
+- [x] Add `monitoring_client = oci.monitoring.MonitoringClient`
+- [x] `list_metric_namespaces(compartment_id)` — what metrics exist
+- [x] `query_metrics(namespace, metric_name, start, end, interval, statistic)` — time-series data
+- [x] `list_alarms(compartment_id, lifecycle_state)` — alarm definitions
+- [x] `get_alarm_status` — current firing state for all alarms
+- [x] `list_alarm_history(alarm_id, hours=24)` — recent state transitions
 
-**Logs (OCI Logging + Log Analytics):**
-- [ ] Add `logging_client = oci.logging.LoggingManagementClient`
-- [ ] Add `log_search_client = oci.log_analytics.LogAnalyticsClient`
-- [ ] `list_log_groups(compartment_id)`
-- [ ] `list_logs(log_group_id)`
-- [ ] `search_logs(query, time_start, time_end, limit=100)` — full OCI Logging Search query language
+**Logs (OCI Logging):**
+- [x] Add `logging_client = oci.logging.LoggingManagementClient`
+- [x] Add `log_search_client = oci.loggingsearch.LogSearchClient`
+- [x] `list_log_groups(compartment_id)`
+- [x] `list_logs(log_group_id)`
+- [x] `search_logs(query, time_start, time_end, limit=100)` — full OCI Logging Search query language
 - [ ] Natural language → OCI log query translation helper (use oracle_context_prompt)
 
 **Deliverable:** Agent can answer "show me all 5xx errors in the last hour" and "which alarms fired today"
