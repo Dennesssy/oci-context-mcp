@@ -8,4 +8,5 @@ __pycache__/
 venv/
 .venv/
 oci_mcp_server.log
+oci_mcp_metrics.jsonl
 .aider*

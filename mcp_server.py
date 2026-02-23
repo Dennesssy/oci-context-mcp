@@ -1,6 +1,9 @@
 import os
 import json
 import asyncio
+import functools
+import hashlib
+import time as _time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Optional, List
@@ -14,6 +17,56 @@ import oci
 from oci.exceptions import ServiceError
 
 load_dotenv()
+
+# ====================== TELEMETRY ======================
+# Set OCI_MCP_TELEMETRY=off to disable. No data leaves the host.
+# Events are written to OCI_MCP_METRICS_FILE (default: oci_mcp_metrics.jsonl).
+_TELEMETRY_MODE = os.getenv("OCI_MCP_TELEMETRY", "local")   # local | off
+_METRICS_FILE   = os.getenv("OCI_MCP_METRICS_FILE", "oci_mcp_metrics.jsonl")
+_SERVER_VERSION = "2.4.0"
+
+
+def _record(tool_name: str, ok: bool, duration_ms: float, error: str = None) -> None:
+    """Append one JSON event to the local metrics file. Never raises."""
+    if _TELEMETRY_MODE == "off":
+        return
+    try:
+        event = {
+            "ts":           _time.time(),
+            "tool":         tool_name,
+            "ok":           ok,
+            "ms":           round(duration_ms),
+            "version":      _SERVER_VERSION,
+            # hashed region — identifies unique deploys without exposing tenant details
+            "region_hash":  hashlib.sha256(
+                                os.getenv("OCI_REGION", "unknown").encode()
+                            ).hexdigest()[:8],
+        }
+        if error:
+            event["error"] = error[:120]
+        with open(_METRICS_FILE, "a") as f:
+            f.write(json.dumps(event) + "\n")
+    except Exception:
+        pass  # telemetry must never crash the server
+
+
+def tracked(fn):
+    """Decorator: record tool name, success/failure, and latency to metrics file."""
+    @functools.wraps(fn)
+    async def wrapper(*args, **kwargs):
+        t0 = _time.monotonic()
+        try:
+            result = await fn(*args, **kwargs)
+            _record(fn.__name__, ok=True,
+                    duration_ms=(_time.monotonic() - t0) * 1000)
+            return result
+        except Exception as exc:
+            _record(fn.__name__, ok=False,
+                    duration_ms=(_time.monotonic() - t0) * 1000,
+                    error=str(exc))
+            raise
+    return wrapper
+
 
 # ====================== COMPARTMENT TREE ======================
 @dataclass
@@ -162,19 +215,21 @@ async def get_root_compartment() -> str:
 
 # ====================== TOOL 1-3: HEALTH & TENANCY ======================
 @mcp.tool()
-async def server_health(ctx: Context) -> str:
+@tracked
+async defserver_health(ctx: Context) -> str:
     """Health check and IAM status."""
     return json.dumps({
         "status": "healthy",
-        "server": "Oracle Context MCP Server v2.3",
-        "tools": 37,
+        "server": "Oracle Context MCP Server v2.4",
+        "tools": 38,
         "iam_mode": "InstancePrincipal" if auth_manager.using_instance_principal else "Config",
         "region": auth_manager.region,
         "compartment_id": auth_manager.compartment_id
     })
 
 @mcp.tool()
-async def get_tenancy_info(ctx: Context) -> str:
+@tracked
+async defget_tenancy_info(ctx: Context) -> str:
     """Get tenancy, user, and authentication context."""
     try:
         return json.dumps({
@@ -187,7 +242,8 @@ async def get_tenancy_info(ctx: Context) -> str:
         return json.dumps({"error": str(e)})
 
 @mcp.tool()
-async def list_regions(ctx: Context) -> str:
+@tracked
+async deflist_regions(ctx: Context) -> str:
     """List all OCI regions."""
     try:
         regions = auth_manager.identity_client.list_regions().data
@@ -197,7 +253,8 @@ async def list_regions(ctx: Context) -> str:
 
 # ====================== TOOL 4-6: COMPUTE ======================
 @mcp.tool()
-async def list_compute_instances(
+@tracked
+async deflist_compute_instances(
     ctx: Context,
     limit: int = 100,
     compartment_scope: str = "single",
@@ -226,7 +283,8 @@ async def list_compute_instances(
         raise HTTPException(status_code=400, detail=e.message)
 
 @mcp.tool()
-async def list_compute_shapes(ctx: Context) -> str:
+@tracked
+async deflist_compute_shapes(ctx: Context) -> str:
     """List available Compute shapes."""
     try:
         shapes = auth_manager.compute_client.list_shapes(compartment_id=auth_manager.compartment_id).data
@@ -235,7 +293,8 @@ async def list_compute_shapes(ctx: Context) -> str:
         raise HTTPException(status_code=500, detail=str(e))
 
 @mcp.tool()
-async def get_compute_instance(ctx: Context, instance_id: str) -> str:
+@tracked
+async defget_compute_instance(ctx: Context, instance_id: str) -> str:
     """Get details of a specific Compute instance."""
     try:
         inst = auth_manager.compute_client.get_instance(instance_id=instance_id).data
@@ -245,7 +304,8 @@ async def get_compute_instance(ctx: Context, instance_id: str) -> str:
 
 # ====================== TOOL 7-10: OBJECT STORAGE ======================
 @mcp.tool()
-async def get_object_storage_namespace(ctx: Context) -> str:
+@tracked
+async defget_object_storage_namespace(ctx: Context) -> str:
     """Get tenancy Object Storage namespace."""
     try:
         ns = auth_manager.os_client.get_namespace().data
@@ -254,7 +314,8 @@ async def get_object_storage_namespace(ctx: Context) -> str:
         raise HTTPException(status_code=500, detail=str(e))
 
 @mcp.tool()
-async def list_buckets(ctx: Context, compartment_scope: str = "single") -> str:
+@tracked
+async deflist_buckets(ctx: Context, compartment_scope: str = "single") -> str:
     """List all Object Storage buckets.
 
     compartment_scope: 'single' (default) | 'recursive' | 'tenancy'
@@ -279,7 +340,8 @@ async def list_buckets(ctx: Context, compartment_scope: str = "single") -> str:
         raise HTTPException(status_code=400, detail=e.message)
 
 @mcp.tool()
-async def list_objects(ctx: Context, bucket_name: str, limit: int = 100) -> str:
+@tracked
+async deflist_objects(ctx: Context, bucket_name: str, limit: int = 100) -> str:
     """List objects in a bucket."""
     auth_manager.validate_iam_access("read")
     try:
@@ -290,7 +352,8 @@ async def list_objects(ctx: Context, bucket_name: str, limit: int = 100) -> str:
         raise HTTPException(status_code=400, detail=e.message)
 
 @mcp.tool()
-async def get_bucket_details(ctx: Context, bucket_name: str) -> str:
+@tracked
+async defget_bucket_details(ctx: Context, bucket_name: str) -> str:
     """Get details of a specific bucket."""
     try:
         ns = auth_manager.os_client.get_namespace().data
@@ -301,7 +364,8 @@ async def get_bucket_details(ctx: Context, bucket_name: str) -> str:
 
 # ====================== TOOL 11-14: IDENTITY ======================
 @mcp.tool()
-async def list_compartments(ctx: Context, parent_id: Optional[str] = None) -> str:
+@tracked
+async deflist_compartments(ctx: Context, parent_id: Optional[str] = None) -> str:
     """List compartments."""
     try:
         cid = parent_id or auth_manager.compartment_id
@@ -311,7 +375,8 @@ async def list_compartments(ctx: Context, parent_id: Optional[str] = None) -> st
         raise HTTPException(status_code=500, detail=str(e))
 
 @mcp.tool()
-async def list_users(ctx: Context) -> str:
+@tracked
+async deflist_users(ctx: Context) -> str:
     """List IAM users."""
     try:
         users = auth_manager.identity_client.list_users(compartment_id=auth_manager.compartment_id).data
@@ -320,7 +385,8 @@ async def list_users(ctx: Context) -> str:
         raise HTTPException(status_code=500, detail=str(e))
 
 @mcp.tool()
-async def list_groups(ctx: Context) -> str:
+@tracked
+async deflist_groups(ctx: Context) -> str:
     """List IAM groups."""
     try:
         groups = auth_manager.identity_client.list_groups(compartment_id=auth_manager.compartment_id).data
@@ -329,7 +395,8 @@ async def list_groups(ctx: Context) -> str:
         raise HTTPException(status_code=500, detail=str(e))
 
 @mcp.tool()
-async def list_policies(ctx: Context) -> str:
+@tracked
+async deflist_policies(ctx: Context) -> str:
     """List IAM policies."""
     try:
         policies = auth_manager.identity_client.list_policies(compartment_id=auth_manager.compartment_id).data
@@ -339,7 +406,8 @@ async def list_policies(ctx: Context) -> str:
 
 # ====================== TOOL 15-16: COMPARTMENT TREE (F2) ======================
 @mcp.tool()
-async def get_compartment_tree(ctx: Context, max_depth: int = 5) -> str:
+@tracked
+async defget_compartment_tree(ctx: Context, max_depth: int = 5) -> str:
     """Return the full compartment hierarchy as a JSON tree (cached 5 min).
     Useful for discovering which compartments exist before scoping queries."""
     try:
@@ -351,7 +419,8 @@ async def get_compartment_tree(ctx: Context, max_depth: int = 5) -> str:
 
 
 @mcp.tool()
-async def resolve_compartment_by_name(ctx: Context, name: str) -> str:
+@tracked
+async defresolve_compartment_by_name(ctx: Context, name: str) -> str:
     """Find a compartment OCID by display name (case-insensitive, searches full tree).
     Returns all matches if multiple compartments share the same name."""
     try:
@@ -375,7 +444,8 @@ async def resolve_compartment_by_name(ctx: Context, name: str) -> str:
 
 # ====================== TOOL 17-20: NETWORKING ======================
 @mcp.tool()
-async def list_vcns(ctx: Context, compartment_scope: str = "single") -> str:
+@tracked
+async deflist_vcns(ctx: Context, compartment_scope: str = "single") -> str:
     """List Virtual Cloud Networks.
 
     compartment_scope: 'single' (default) | 'recursive' | 'tenancy'
@@ -398,7 +468,8 @@ async def list_vcns(ctx: Context, compartment_scope: str = "single") -> str:
         raise HTTPException(status_code=500, detail=str(e))
 
 @mcp.tool()
-async def list_subnets(ctx: Context, vcn_id: Optional[str] = None) -> str:
+@tracked
+async deflist_subnets(ctx: Context, vcn_id: Optional[str] = None) -> str:
     """List subnets (optionally filter by VCN)."""
     try:
         subnets = auth_manager.network_client.list_subnets(compartment_id=auth_manager.compartment_id, vcn_id=vcn_id).data
@@ -407,7 +478,8 @@ async def list_subnets(ctx: Context, vcn_id: Optional[str] = None) -> str:
         raise HTTPException(status_code=500, detail=str(e))
 
 @mcp.tool()
-async def list_security_lists(ctx: Context) -> str:
+@tracked
+async deflist_security_lists(ctx: Context) -> str:
     """List Security Lists."""
     try:
         sls = auth_manager.network_client.list_security_lists(compartment_id=auth_manager.compartment_id).data
@@ -416,7 +488,8 @@ async def list_security_lists(ctx: Context) -> str:
         raise HTTPException(status_code=500, detail=str(e))
 
 @mcp.tool()
-async def list_route_tables(ctx: Context) -> str:
+@tracked
+async deflist_route_tables(ctx: Context) -> str:
     """List Route Tables."""
     try:
         rts = auth_manager.network_client.list_route_tables(compartment_id=auth_manager.compartment_id).data
@@ -426,7 +499,8 @@ async def list_route_tables(ctx: Context) -> str:
 
 # ====================== TOOL 19-20: BLOCK & FILE STORAGE ======================
 @mcp.tool()
-async def list_block_volumes(ctx: Context) -> str:
+@tracked
+async deflist_block_volumes(ctx: Context) -> str:
     """List Block Volumes."""
     try:
         vols = auth_manager.blockstorage_client.list_volumes(compartment_id=auth_manager.compartment_id).data
@@ -435,7 +509,8 @@ async def list_block_volumes(ctx: Context) -> str:
         raise HTTPException(status_code=500, detail=str(e))
 
 @mcp.tool()
-async def list_file_systems(ctx: Context, availability_domain: Optional[str] = None) -> str:
+@tracked
+async deflist_file_systems(ctx: Context, availability_domain: Optional[str] = None) -> str:
     """List File Storage systems. availability_domain is required by OCI API (e.g. 'AD-1')."""
     try:
         if not availability_domain:
@@ -456,7 +531,8 @@ async def list_file_systems(ctx: Context, availability_domain: Optional[str] = N
 
 # ====================== TOOL 21: SEARCH ======================
 @mcp.tool()
-async def search_resources(ctx: Context, query: str, limit: int = 50) -> str:
+@tracked
+async defsearch_resources(ctx: Context, query: str, limit: int = 50) -> str:
     """Free-text search across all OCI resources."""
     try:
         details = oci.resource_search.models.FreeFormSearchDetails(text=query)
@@ -468,7 +544,8 @@ async def search_resources(ctx: Context, query: str, limit: int = 50) -> str:
 
 # ====================== TOOL 22-23: DATABASE ======================
 @mcp.tool()
-async def list_autonomous_databases(ctx: Context, compartment_scope: str = "single") -> str:
+@tracked
+async deflist_autonomous_databases(ctx: Context, compartment_scope: str = "single") -> str:
     """List Autonomous Databases.
 
     compartment_scope: 'single' (default) | 'recursive' | 'tenancy'
@@ -492,7 +569,8 @@ async def list_autonomous_databases(ctx: Context, compartment_scope: str = "sing
         raise HTTPException(status_code=500, detail=str(e))
 
 @mcp.tool()
-async def list_db_systems(ctx: Context, compartment_scope: str = "single") -> str:
+@tracked
+async deflist_db_systems(ctx: Context, compartment_scope: str = "single") -> str:
     """List DB Systems.
 
     compartment_scope: 'single' (default) | 'recursive' | 'tenancy'
@@ -515,7 +593,8 @@ async def list_db_systems(ctx: Context, compartment_scope: str = "single") -> st
 
 # ====================== TOOL 24: USAGE ======================
 @mcp.tool()
-async def get_usage_summary(ctx: Context, time_start: str, time_end: str) -> str:
+@tracked
+async defget_usage_summary(ctx: Context, time_start: str, time_end: str) -> str:
     """Get usage/cost summary (dates in ISO format)."""
     try:
         details = oci.usage_api.models.SummarizeUsageDetails(time_usage_started=time_start, time_usage_ended=time_end)
@@ -536,7 +615,8 @@ async def get_usage_summary(ctx: Context, time_start: str, time_end: str) -> str
 
 # ====================== TOOL 25-31: MONITORING & LOGGING (F3) ======================
 @mcp.tool()
-async def list_metric_namespaces(ctx: Context, compartment_scope: str = "single") -> str:
+@tracked
+async deflist_metric_namespaces(ctx: Context, compartment_scope: str = "single") -> str:
     """List available OCI Monitoring metric namespaces (e.g. oci_computeagent, oci_lbaas).
 
     compartment_scope: 'single' (default) | 'recursive' | 'tenancy'
@@ -561,7 +641,8 @@ async def list_metric_namespaces(ctx: Context, compartment_scope: str = "single"
 
 
 @mcp.tool()
-async def query_metrics(
+@tracked
+async defquery_metrics(
     ctx: Context,
     namespace: str,
     metric_name: str,
@@ -612,7 +693,8 @@ async def query_metrics(
 
 
 @mcp.tool()
-async def list_alarms(
+@tracked
+async deflist_alarms(
     ctx: Context,
     lifecycle_state: Optional[str] = None,
     compartment_scope: str = "single",
@@ -652,7 +734,8 @@ async def list_alarms(
 
 
 @mcp.tool()
-async def get_alarm_status(ctx: Context, compartment_scope: str = "single") -> str:
+@tracked
+async defget_alarm_status(ctx: Context, compartment_scope: str = "single") -> str:
     """Get current firing status for all alarms (OK / FIRING / SUSPENDED).
 
     compartment_scope: 'single' (default) | 'recursive' | 'tenancy'
@@ -682,7 +765,8 @@ async def get_alarm_status(ctx: Context, compartment_scope: str = "single") -> s
 
 
 @mcp.tool()
-async def list_alarm_history(ctx: Context, alarm_id: str, hours: int = 24) -> str:
+@tracked
+async deflist_alarm_history(ctx: Context, alarm_id: str, hours: int = 24) -> str:
     """List state-change history for a specific alarm.
 
     alarm_id: OCID of the alarm
@@ -710,7 +794,8 @@ async def list_alarm_history(ctx: Context, alarm_id: str, hours: int = 24) -> st
 
 
 @mcp.tool()
-async def list_log_groups(ctx: Context, compartment_scope: str = "single") -> str:
+@tracked
+async deflist_log_groups(ctx: Context, compartment_scope: str = "single") -> str:
     """List OCI Logging log groups.
 
     compartment_scope: 'single' (default) | 'recursive' | 'tenancy'
@@ -739,7 +824,8 @@ async def list_log_groups(ctx: Context, compartment_scope: str = "single") -> st
 
 
 @mcp.tool()
-async def list_logs(ctx: Context, log_group_id: str) -> str:
+@tracked
+async deflist_logs(ctx: Context, log_group_id: str) -> str:
     """List individual logs within a log group.
 
     log_group_id: OCID of the log group
@@ -761,7 +847,8 @@ async def list_logs(ctx: Context, log_group_id: str) -> str:
 
 
 @mcp.tool()
-async def search_logs(
+@tracked
+async defsearch_logs(
     ctx: Context,
     query: str,
     time_start: str,
@@ -800,7 +887,8 @@ async def search_logs(
 
 # ====================== TOOL 32-33: NETWORK SECURITY GROUPS & LOAD BALANCERS ======================
 @mcp.tool()
-async def list_network_security_groups(ctx: Context) -> str:
+@tracked
+async deflist_network_security_groups(ctx: Context) -> str:
     """List Network Security Groups (NSGs)."""
     try:
         nsgs = auth_manager.network_client.list_network_security_groups(compartment_id=auth_manager.compartment_id).data
@@ -809,7 +897,8 @@ async def list_network_security_groups(ctx: Context) -> str:
         raise HTTPException(status_code=500, detail=str(e))
 
 @mcp.tool()
-async def list_load_balancers(ctx: Context) -> str:
+@tracked
+async deflist_load_balancers(ctx: Context) -> str:
     """List Load Balancers."""
     try:
         lbs = auth_manager.lb_client.list_load_balancers(compartment_id=auth_manager.compartment_id).data
@@ -819,7 +908,8 @@ async def list_load_balancers(ctx: Context) -> str:
 
 # ====================== TOOL 27-28: VAULT ======================
 @mcp.tool()
-async def list_vaults(ctx: Context) -> str:
+@tracked
+async deflist_vaults(ctx: Context) -> str:
     """List Vaults."""
     try:
         vaults = auth_manager.vault_client.list_vaults(compartment_id=auth_manager.compartment_id).data
@@ -828,13 +918,73 @@ async def list_vaults(ctx: Context) -> str:
         raise HTTPException(status_code=500, detail=str(e))
 
 @mcp.tool()
-async def list_secrets(ctx: Context) -> str:
+@tracked
+async deflist_secrets(ctx: Context) -> str:
     """List Secrets (Vault)."""
     try:
         secrets = auth_manager.vault_client.list_secrets(compartment_id=auth_manager.compartment_id).data
         return json.dumps([{"id": s.id, "name": s.secret_name} for s in secrets], default=str)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# ====================== TOOL: TELEMETRY SUMMARY ======================
+@mcp.tool()
+@tracked
+async def get_metrics_summary(ctx: Context) -> str:
+    """Return aggregated usage stats from the local metrics file.
+
+    Shows total calls, error rates, and avg latency per tool — sorted by popularity.
+    Useful for understanding which tools are used most and which need improvement.
+    Set OCI_MCP_TELEMETRY=off to disable all tracking.
+    """
+    if not os.path.exists(_METRICS_FILE):
+        return json.dumps({
+            "message": "No metrics recorded yet.",
+            "telemetry": _TELEMETRY_MODE,
+            "hint": "Call any tool first, then re-run get_metrics_summary.",
+        })
+    try:
+        stats: dict = {}
+        total = 0
+        errors_total = 0
+        with open(_METRICS_FILE) as f:
+            for line in f:
+                try:
+                    e = json.loads(line)
+                    t = e.get("tool", "unknown")
+                    if t not in stats:
+                        stats[t] = {"calls": 0, "errors": 0, "total_ms": 0.0}
+                    stats[t]["calls"] += 1
+                    if not e.get("ok", True):
+                        stats[t]["errors"] += 1
+                        errors_total += 1
+                    stats[t]["total_ms"] += e.get("ms", 0)
+                    total += 1
+                except Exception:
+                    pass
+
+        tools_summary = [
+            {
+                "tool":       t,
+                "calls":      s["calls"],
+                "errors":     s["errors"],
+                "error_pct":  round(s["errors"] / s["calls"] * 100, 1) if s["calls"] else 0,
+                "avg_ms":     round(s["total_ms"] / s["calls"]) if s["calls"] else 0,
+            }
+            for t, s in sorted(stats.items(), key=lambda x: -x[1]["calls"])
+        ]
+
+        return json.dumps({
+            "telemetry":    _TELEMETRY_MODE,
+            "metrics_file": _METRICS_FILE,
+            "total_calls":  total,
+            "total_errors": errors_total,
+            "unique_tools": len(stats),
+            "tools":        tools_summary,
+        }, default=str)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # ====================== PROMPT ======================
 @mcp.prompt()
@@ -851,11 +1001,11 @@ mcp.mount(app, "/mcp")
 
 @app.get("/")
 async def root():
-    return {"message": "Oracle Context MCP Server v2.3", "tools": 37, "endpoint": "/mcp"}
+    return {"message": "Oracle Context MCP Server v2.4", "tools": 38, "endpoint": "/mcp"}
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "tools_count": 37, "iam": "InstancePrincipal" if auth_manager.using_instance_principal else "Config"}
+    return {"status": "healthy", "tools_count": 38, "iam": "InstancePrincipal" if auth_manager.using_instance_principal else "Config"}
 
 
 # ====================== CLI ENTRY POINT ======================
@@ -912,7 +1062,7 @@ def cli(transport, port, host, print_config):
         mcp.run()  # FastMCP built-in STDIO transport
     else:
         import uvicorn
-        logger.info("Starting Oracle Context MCP Server (HTTP) with 37 tools on {}:{}", host, port)
+        logger.info("Starting Oracle Context MCP Server (HTTP) with 38 tools on {}:{}", host, port)
         uvicorn.run(app, host=host, port=port)
 
 

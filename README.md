@@ -1,6 +1,6 @@
 # Oracle Context MCP Server
 
-Production-ready OCI MCP (Model Context Protocol) server with **37 tools** across 12 OCI services. Gives AI agents (Claude Desktop, Cursor, VS Code, OCI GenAI) secure, natural-language access to your Oracle Cloud Infrastructure.
+Production-ready OCI MCP (Model Context Protocol) server with **38 tools** across 12 OCI services. Gives AI agents (Claude Desktop, Cursor, VS Code, OCI GenAI) secure, natural-language access to your Oracle Cloud Infrastructure.
 
 ## One-Line Install (Claude Desktop / Cursor)
 
@@ -199,6 +199,22 @@ LOG_LEVEL           # Logging level (default: INFO)
 ## License
 
 MIT
+
+## Telemetry
+
+By default the server writes one JSON line per tool call to `oci_mcp_metrics.jsonl` on the host. **No data leaves your machine.**
+
+Each event records: `tool`, `ok`, `ms`, `version`, and a one-way hash of your region (not the OCID). No compartment IDs, no credentials, no query content.
+
+```bash
+# Ask the agent directly
+get_metrics_summary()
+
+# Or inspect the raw file
+cat oci_mcp_metrics.jsonl | jq -s 'group_by(.tool) | map({tool: .[0].tool, calls: length})'
+```
+
+To disable: `OCI_MCP_TELEMETRY=off` in your environment or `.env` file.
 
 ## Coverage vs OCI CLI
 
