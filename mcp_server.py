@@ -1,7 +1,9 @@
 import os
 import json
 import asyncio
-from typing import Optional
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from typing import Optional, List
 from dotenv import load_dotenv
 from loguru import logger
 from fastapi import FastAPI, HTTPException, Depends, Header
@@ -12,6 +14,88 @@ import oci
 from oci.exceptions import ServiceError
 
 load_dotenv()
+
+# ====================== COMPARTMENT TREE ======================
+@dataclass
+class CompartmentNode:
+    id: str
+    name: str
+    lifecycle_state: str
+    children: List["CompartmentNode"] = field(default_factory=list)
+    depth: int = 0
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "lifecycle_state": self.lifecycle_state,
+            "depth": self.depth,
+            "children": [c.to_dict() for c in self.children],
+        }
+
+
+_tree_cache: dict = {}  # {root_id: (CompartmentNode, expires_at)}
+
+
+async def build_compartment_tree(root_id: str, max_depth: int = 5) -> CompartmentNode:
+    """Recursively build compartment hierarchy with a 5-minute in-memory cache."""
+    cached = _tree_cache.get(root_id)
+    if cached and cached[1] > datetime.utcnow():
+        return cached[0]
+
+    async def _fetch(parent_id: str, depth: int) -> List[CompartmentNode]:
+        if depth >= max_depth:
+            return []
+        try:
+            resp = auth_manager.identity_client.list_compartments(
+                compartment_id=parent_id,
+                lifecycle_state="ACTIVE",
+            ).data
+        except Exception:
+            return []
+        nodes: List[CompartmentNode] = []
+        tasks = []
+        for c in resp:
+            node = CompartmentNode(
+                id=c.id, name=c.name,
+                lifecycle_state=c.lifecycle_state, depth=depth
+            )
+            nodes.append(node)
+            tasks.append(_fetch(c.id, depth + 1))
+        children_lists = await asyncio.gather(*tasks)
+        for node, children in zip(nodes, children_lists):
+            node.children = children
+        return nodes
+
+    root = CompartmentNode(id=root_id, name="root", lifecycle_state="ACTIVE")
+    root.children = await _fetch(root_id, 0)
+    _tree_cache[root_id] = (root, datetime.utcnow() + timedelta(minutes=5))
+    return root
+
+
+def flatten_compartment_ids(node: CompartmentNode) -> List[str]:
+    ids = [node.id]
+    for child in node.children:
+        ids.extend(flatten_compartment_ids(child))
+    return ids
+
+
+async def resolve_compartment_ids(scope: str) -> List[str]:
+    """Resolve compartment_scope to a list of OCIDs.
+
+    scope values:
+      single   — current OCI_COMPARTMENT_ID only (default, fast)
+      recursive — current compartment + all child compartments
+      tenancy  — root tenancy + entire hierarchy
+    """
+    root = auth_manager.compartment_id
+    if scope == "tenancy":
+        root = getattr(auth_manager.signer, "tenancy_id", root)
+    if scope == "single":
+        return [root]
+    tree = await build_compartment_tree(root)
+    return flatten_compartment_ids(tree)
+
 
 # ====================== LOGGING ======================
 logger.add("oci_mcp_server.log", rotation="10 MB", level=os.getenv("LOG_LEVEL", "INFO"))
@@ -79,7 +163,8 @@ async def server_health(ctx: Context) -> str:
     """Health check and IAM status."""
     return json.dumps({
         "status": "healthy",
-        "server": "Oracle Context MCP Server v2.0",
+        "server": "Oracle Context MCP Server v2.1",
+        "tools": 30,
         "iam_mode": "InstancePrincipal" if auth_manager.using_instance_principal else "Config",
         "region": auth_manager.region,
         "compartment_id": auth_manager.compartment_id
@@ -109,12 +194,31 @@ async def list_regions(ctx: Context) -> str:
 
 # ====================== TOOL 4-6: COMPUTE ======================
 @mcp.tool()
-async def list_compute_instances(ctx: Context, limit: int = 100) -> str:
-    """List Compute Instances."""
+async def list_compute_instances(
+    ctx: Context,
+    limit: int = 100,
+    compartment_scope: str = "single",
+) -> str:
+    """List Compute Instances.
+
+    compartment_scope: 'single' (default) | 'recursive' (include sub-compartments) | 'tenancy'
+    """
     auth_manager.validate_iam_access("read")
     try:
-        resp = auth_manager.compute_client.list_instances(compartment_id=auth_manager.compartment_id, limit=limit).data
-        return json.dumps([{"id": i.id, "name": i.display_name, "shape": i.shape, "state": i.lifecycle_state} for i in resp], default=str)
+        compartment_ids = await resolve_compartment_ids(compartment_scope)
+        results = []
+        for cid in compartment_ids:
+            try:
+                resp = auth_manager.compute_client.list_instances(
+                    compartment_id=cid, limit=limit).data
+                results.extend([
+                    {"id": i.id, "name": i.display_name, "shape": i.shape,
+                     "state": i.lifecycle_state, "compartment_id": cid}
+                    for i in resp
+                ])
+            except ServiceError:
+                pass
+        return json.dumps(results, default=str)
     except ServiceError as e:
         raise HTTPException(status_code=400, detail=e.message)
 
@@ -147,13 +251,27 @@ async def get_object_storage_namespace(ctx: Context) -> str:
         raise HTTPException(status_code=500, detail=str(e))
 
 @mcp.tool()
-async def list_buckets(ctx: Context) -> str:
-    """List all Object Storage buckets."""
+async def list_buckets(ctx: Context, compartment_scope: str = "single") -> str:
+    """List all Object Storage buckets.
+
+    compartment_scope: 'single' (default) | 'recursive' | 'tenancy'
+    """
     auth_manager.validate_iam_access("read")
     try:
         ns = auth_manager.os_client.get_namespace().data
-        buckets = auth_manager.os_client.list_buckets(namespace_name=ns, compartment_id=auth_manager.compartment_id).data
-        return json.dumps([{"name": b.name, "created": str(b.time_created)} for b in buckets], default=str)
+        compartment_ids = await resolve_compartment_ids(compartment_scope)
+        results = []
+        for cid in compartment_ids:
+            try:
+                buckets = auth_manager.os_client.list_buckets(
+                    namespace_name=ns, compartment_id=cid).data
+                results.extend([
+                    {"name": b.name, "created": str(b.time_created), "compartment_id": cid}
+                    for b in buckets
+                ])
+            except ServiceError:
+                pass
+        return json.dumps(results, default=str)
     except ServiceError as e:
         raise HTTPException(status_code=400, detail=e.message)
 
@@ -216,13 +334,63 @@ async def list_policies(ctx: Context) -> str:
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# ====================== TOOL 15-18: NETWORKING ======================
+# ====================== TOOL 15-16: COMPARTMENT TREE (F2) ======================
 @mcp.tool()
-async def list_vcns(ctx: Context) -> str:
-    """List Virtual Cloud Networks."""
+async def get_compartment_tree(ctx: Context, max_depth: int = 5) -> str:
+    """Return the full compartment hierarchy as a JSON tree (cached 5 min).
+    Useful for discovering which compartments exist before scoping queries."""
     try:
-        vcns = auth_manager.network_client.list_vcns(compartment_id=auth_manager.compartment_id).data
-        return json.dumps([{"id": v.id, "name": v.display_name, "cidr": v.cidr_block} for v in vcns], default=str)
+        root_id = auth_manager.compartment_id
+        tree = await build_compartment_tree(root_id, max_depth=max_depth)
+        return json.dumps(tree.to_dict(), default=str)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@mcp.tool()
+async def resolve_compartment_by_name(ctx: Context, name: str) -> str:
+    """Find a compartment OCID by display name (case-insensitive, searches full tree).
+    Returns all matches if multiple compartments share the same name."""
+    try:
+        root_id = auth_manager.compartment_id
+        tree = await build_compartment_tree(root_id)
+        matches = []
+
+        def _search(node: CompartmentNode):
+            if node.name.lower() == name.lower():
+                matches.append({"id": node.id, "name": node.name,
+                                 "lifecycle_state": node.lifecycle_state,
+                                 "depth": node.depth})
+            for child in node.children:
+                _search(child)
+
+        _search(tree)
+        return json.dumps({"query": name, "matches": matches, "count": len(matches)})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ====================== TOOL 17-20: NETWORKING ======================
+@mcp.tool()
+async def list_vcns(ctx: Context, compartment_scope: str = "single") -> str:
+    """List Virtual Cloud Networks.
+
+    compartment_scope: 'single' (default) | 'recursive' | 'tenancy'
+    """
+    try:
+        compartment_ids = await resolve_compartment_ids(compartment_scope)
+        results = []
+        for cid in compartment_ids:
+            try:
+                vcns = auth_manager.network_client.list_vcns(compartment_id=cid).data
+                results.extend([
+                    {"id": v.id, "name": v.display_name, "cidr": v.cidr_block,
+                     "compartment_id": cid}
+                    for v in vcns
+                ])
+            except Exception:
+                pass
+        return json.dumps(results, default=str)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -297,20 +465,48 @@ async def search_resources(ctx: Context, query: str, limit: int = 50) -> str:
 
 # ====================== TOOL 22-23: DATABASE ======================
 @mcp.tool()
-async def list_autonomous_databases(ctx: Context) -> str:
-    """List Autonomous Databases."""
+async def list_autonomous_databases(ctx: Context, compartment_scope: str = "single") -> str:
+    """List Autonomous Databases.
+
+    compartment_scope: 'single' (default) | 'recursive' | 'tenancy'
+    """
     try:
-        dbs = auth_manager.database_client.list_autonomous_databases(compartment_id=auth_manager.compartment_id).data
-        return json.dumps([{"id": db.id, "name": db.display_name, "db_name": db.db_name, "state": db.lifecycle_state} for db in dbs], default=str)
+        compartment_ids = await resolve_compartment_ids(compartment_scope)
+        results = []
+        for cid in compartment_ids:
+            try:
+                dbs = auth_manager.database_client.list_autonomous_databases(
+                    compartment_id=cid).data
+                results.extend([
+                    {"id": db.id, "name": db.display_name, "db_name": db.db_name,
+                     "state": db.lifecycle_state, "compartment_id": cid}
+                    for db in dbs
+                ])
+            except Exception:
+                pass
+        return json.dumps(results, default=str)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @mcp.tool()
-async def list_db_systems(ctx: Context) -> str:
-    """List DB Systems."""
+async def list_db_systems(ctx: Context, compartment_scope: str = "single") -> str:
+    """List DB Systems.
+
+    compartment_scope: 'single' (default) | 'recursive' | 'tenancy'
+    """
     try:
-        dbs = auth_manager.database_client.list_db_systems(compartment_id=auth_manager.compartment_id).data
-        return json.dumps([{"id": db.id, "name": db.display_name} for db in dbs], default=str)
+        compartment_ids = await resolve_compartment_ids(compartment_scope)
+        results = []
+        for cid in compartment_ids:
+            try:
+                dbs = auth_manager.database_client.list_db_systems(compartment_id=cid).data
+                results.extend([
+                    {"id": db.id, "name": db.display_name, "compartment_id": cid}
+                    for db in dbs
+                ])
+            except Exception:
+                pass
+        return json.dumps(results, default=str)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -388,11 +584,11 @@ mcp.mount(app, "/mcp")
 
 @app.get("/")
 async def root():
-    return {"message": "Oracle Context MCP Server v2.0", "tools": 28, "endpoint": "/mcp"}
+    return {"message": "Oracle Context MCP Server v2.1", "tools": 30, "endpoint": "/mcp"}
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "tools_count": 28, "iam": "InstancePrincipal" if auth_manager.using_instance_principal else "Config"}
+    return {"status": "healthy", "tools_count": 30, "iam": "InstancePrincipal" if auth_manager.using_instance_principal else "Config"}
 
 
 # ====================== CLI ENTRY POINT ======================
@@ -449,7 +645,7 @@ def cli(transport, port, host, print_config):
         mcp.run()  # FastMCP built-in STDIO transport
     else:
         import uvicorn
-        logger.info("Starting Oracle Context MCP Server (HTTP) with 28 tools on {}:{}", host, port)
+        logger.info("Starting Oracle Context MCP Server (HTTP) with 30 tools on {}:{}", host, port)
         uvicorn.run(app, host=host, port=port)
 
 

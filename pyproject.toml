@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "oci-context-mcp"
-version = "2.1.0"
+version = "2.2.0"
 description = "MCP server giving AI agents read access to Oracle Cloud Infrastructure (28 tools)"
 readme = "README.md"
 license = { text = "MIT" }

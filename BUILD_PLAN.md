@@ -30,12 +30,12 @@
 **Why first:** HTTP is wrong for local AI agent use. Claude Desktop, Cursor, and VS Code all expect STDIO. This is the packaging step that turns the server from a Docker container into a one-line install.
 
 Tasks:
-- [ ] Add `--transport stdio` launch mode to `mcp_server.py` entry point
-- [ ] Split FastAPI app mount from MCP instance (MCP can run standalone without FastAPI for STDIO)
-- [ ] Generate `claude_desktop_config.json` snippet on first run
-- [ ] Add `pyproject.toml` with `[project.scripts]` entry point: `oci-mcp = mcp_server:cli`
+- [x] Add `--transport stdio` launch mode to `mcp_server.py` entry point
+- [x] Split FastAPI app mount from MCP instance (MCP can run standalone without FastAPI for STDIO)
+- [x] Generate `claude_desktop_config.json` snippet on first run (`--print-config`)
+- [x] Add `pyproject.toml` with `[project.scripts]` entry point: `oci-mcp = mcp_server:cli`
 - [ ] Publish to PyPI as `oci-context-mcp`
-- [ ] Write install instructions: `uvx oci-context-mcp` (zero-install via uvx)
+- [x] Write install instructions: `uvx oci-context-mcp` (zero-install via uvx)
 
 **Deliverable:** `uvx oci-context-mcp` works in Claude Desktop claude_desktop_config.json
 
@@ -46,12 +46,13 @@ Tasks:
 **Why first:** Every query is currently scoped to a single flat compartment. Real OCI tenancies have 3–6 levels of compartment nesting. Without tree traversal, the server is blind to most resources.
 
 Tasks:
-- [ ] Add `build_compartment_tree(root_id)` helper — recursive `list_compartments` with depth limit (default 5)
-- [ ] Cache tree in-memory with 5-minute TTL (compartments rarely change)
-- [ ] Add `--compartment-scope` flag: `single` (current) | `recursive` | `tenancy`
-- [ ] Update all 28 existing tools to accept optional `compartment_id` override
-- [ ] Add `get_compartment_tree` tool — returns JSON tree of all compartments
-- [ ] Add `resolve_compartment_by_name(name)` helper for human-friendly queries
+- [x] Add `build_compartment_tree(root_id)` helper — recursive `list_compartments` with depth limit (default 5)
+- [x] Cache tree in-memory with 5-minute TTL (compartments rarely change)
+- [x] Add `compartment_scope` param: `single` (current) | `recursive` | `tenancy`
+- [x] Update key tools (compute, buckets, VCNs, databases) to accept `compartment_scope`
+- [x] Add `get_compartment_tree` tool — returns JSON tree of all compartments
+- [x] Add `resolve_compartment_by_name(name)` helper for human-friendly queries
+- [ ] Update remaining tools (subnets, security_lists, block_volumes, etc.) to accept `compartment_scope`
 
 **Deliverable:** `list_compute_instances(compartment_scope="recursive")` returns instances across all child compartments
 

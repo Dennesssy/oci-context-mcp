@@ -1,6 +1,6 @@
 # Oracle Context MCP Server
 
-Production-ready OCI MCP (Model Context Protocol) server with **28 tools** across 10 OCI services. Gives AI agents (Claude Desktop, Cursor, VS Code, OCI GenAI) secure, natural-language access to your Oracle Cloud Infrastructure.
+Production-ready OCI MCP (Model Context Protocol) server with **30 tools** across 10 OCI services. Gives AI agents (Claude Desktop, Cursor, VS Code, OCI GenAI) secure, natural-language access to your Oracle Cloud Infrastructure.
 
 ## One-Line Install (Claude Desktop / Cursor)
 
@@ -113,16 +113,20 @@ terraform apply -var-file=terraform.tfvars
 | Category | Tools | Count |
 |----------|-------|-------|
 | Health & Tenancy | server_health, get_tenancy_info, list_regions | 3 |
-| Compute | list_compute_instances, list_compute_shapes, get_compute_instance | 3 |
-| Object Storage | get_object_storage_namespace, list_buckets, list_objects, get_bucket_details | 4 |
+| Compute | list_compute_instances*, list_compute_shapes, get_compute_instance | 3 |
+| Object Storage | get_object_storage_namespace, list_buckets*, list_objects, get_bucket_details | 4 |
 | Identity & IAM | list_compartments, list_users, list_groups, list_policies | 4 |
-| Networking | list_vcns, list_subnets, list_security_lists, list_route_tables | 4 |
+| Compartment Tree | get_compartment_tree, resolve_compartment_by_name | 2 |
+| Networking | list_vcns*, list_subnets, list_security_lists, list_route_tables | 4 |
 | Block & File Storage | list_block_volumes, list_file_systems | 2 |
 | Resource Search | search_resources | 1 |
-| Database | list_autonomous_databases, list_db_systems | 2 |
+| Database | list_autonomous_databases*, list_db_systems* | 2 |
 | Monitoring | get_usage_summary | 1 |
 | Vault & Secrets | list_vaults, list_secrets | 2 |
-| **TOTAL** | | **28** |
+| NSG & Load Balancers | list_network_security_groups, list_load_balancers | 2 |
+| **TOTAL** | | **30** |
+
+`*` supports `compartment_scope`: `single` (default) \| `recursive` \| `tenancy`
 
 ## Connecting OCI Generative AI Agent
 
