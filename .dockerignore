@@ -1,16 +1,45 @@
+# Secrets and credentials
+.env
+*.env
+*.env.example
+*.pem
+*.key
+*.p8
+
+# Runtime artefacts — must not be baked into the image
+oci_mcp_metrics.jsonl
+oci_mcp_server.log
+*.log
+*.jsonl
+
+# Build noise
 __pycache__/
 *.pyc
 *.pyo
-.env
-*.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .aider*
 aidergoss-output.log
-terminal_test/
+
+# IaC and scripts — not needed inside the container
+infra/
+scripts/
+*.tf
+*.tfvars
+*.tfstate
+*.tfstate.backup
+.terraform/
+
+# Project metadata
+pyproject.toml
+*.md
+docs/
 tests/
+terminal_test/
+
+# VCS / editor
 .git/
 .gitignore
-infra/
-docs/
-*.md
-pyproject.toml
-.env.example
+.vscode/
+.idea/
