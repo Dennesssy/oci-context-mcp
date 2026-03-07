@@ -248,3 +248,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). For questions: denn.stewartjr@gmail.com
 ## License
 
 MIT
+
+---
+
+## Disclaimer
+
+This project is not affiliated with or endorsed by Oracle Corporation.
+"Oracle", "OCI", and "Oracle Cloud Infrastructure" are trademarks of Oracle Corporation.
+"NVIDIA" and "NIM" are trademarks of NVIDIA Corporation.

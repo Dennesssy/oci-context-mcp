@@ -208,7 +208,15 @@ class OCIAuthManager:
         logger.info(f"IAM validation for action: {action}")
         return True
 
-auth_manager = OCIAuthManager()
+_auth_manager: Optional["OCIAuthManager"] = None
+
+
+def get_auth_manager() -> "OCIAuthManager":
+    global _auth_manager
+    if _auth_manager is None:
+        _auth_manager = OCIAuthManager()
+    return _auth_manager
+
 
 # ====================== FASTAPI + MCP ======================
 app = FastAPI(title="Oracle Context MCP Server", version="2.0.0")
