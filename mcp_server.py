@@ -1886,7 +1886,7 @@ def _print_claude_config():
 @click.option("--print-config", is_flag=True,
               help="Print ready-to-paste Claude Desktop mcpServers config and exit")
 def cli(transport, port, host, print_config):
-    """Oracle Context MCP Server — 28 OCI read tools for AI agents.
+    """Oracle Context MCP Server — 69 OCI read tools for AI agents.
 
     \b
     Quick start (Claude Desktop / Cursor):

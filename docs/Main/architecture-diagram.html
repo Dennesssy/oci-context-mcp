@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OkOCI Platform — Architecture Diagram</title>
+<style>
+  :root {
+    --oracle-red: #C74634;
+    --oracle-dark: #1A1A2E;
+    --oracle-mid: #16213E;
+    --oracle-panel: #0F3460;
+    --oracle-accent: #E94560;
+    --nvidia-green: #76B900;
+    --deploy-blue: #0A84FF;
+    --free-gold: #F4A261;
+    --text-primary: #F0F0F0;
+    --text-muted: #A0A8B8;
+    --border: rgba(255,255,255,0.08);
+    --glow-oracle: rgba(199,70,52,0.25);
+    --glow-nvidia: rgba(118,185,0,0.25);
+    --glow-deploy: rgba(10,132,255,0.25);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--oracle-dark);
+    color: var(--text-primary);
+    font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+    padding: 32px 24px 48px;
+  }
+
+  /* ── Header ─────────────────────────────────────────── */
+  .header {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+  .header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    color: var(--text-primary);
+  }
+  .header h1 span { color: var(--oracle-red); }
+  .header p {
+    margin-top: 8px;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+  .badge {
+    display: inline-block;
+    background: rgba(199,70,52,0.15);
+    border: 1px solid rgba(199,70,52,0.4);
+    color: #E8896E;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    padding: 3px 10px;
+    border-radius: 20px;
+    margin-right: 6px;
+    margin-top: 10px;
+  }
+
+  /* ── Main grid ──────────────────────────────────────── */
+  .diagram {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  /* ── Connector arrow ────────────────────────────────── */
+  .connector {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 4px 0;
+    z-index: 1;
+  }
+  .connector-line {
+    width: 2px;
+    height: 28px;
+    background: linear-gradient(to bottom, rgba(255,255,255,0.15), rgba(255,255,255,0.3));
+  }
+  .connector-arrow {
+    width: 0; height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 8px solid rgba(255,255,255,0.3);
+  }
+  .connector-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    text-align: center;
+    font-style: italic;
+  }
+
+  /* ── Layer card ─────────────────────────────────────── */
+  .layer {
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+    position: relative;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .layer:hover {
+    transform: translateY(-2px);
+  }
+
+  .layer-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 20px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .layer-icon {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .layer-title { font-size: 16px; font-weight: 600; }
+  .layer-subtitle { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .layer-tag {
+    margin-left: auto;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 10px;
+    flex-shrink: 0;
+  }
+
+  .layer-body {
+    padding: 16px 20px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+  }
+
+  /* ── Service chip ───────────────────────────────────── */
+  .chip {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .chip-title {
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .chip-detail {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+  .chip-free {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--free-gold);
+    margin-top: 4px;
+    letter-spacing: 0.4px;
+  }
+
+  /* ── Layer colour themes ────────────────────────────── */
+
+  /* Internet / User */
+  .layer-user {
+    background: rgba(255,255,255,0.02);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.06);
+  }
+  .layer-user .layer-header { background: rgba(255,255,255,0.03); }
+  .layer-user .layer-icon { background: rgba(255,255,255,0.08); }
+
+  /* Edge — API Gateway */
+  .layer-edge {
+    background: linear-gradient(135deg, rgba(199,70,52,0.06) 0%, rgba(26,26,46,0) 60%);
+    box-shadow: 0 0 30px var(--glow-oracle), 0 0 0 1px rgba(199,70,52,0.2);
+  }
+  .layer-edge .layer-header { background: rgba(199,70,52,0.08); }
+  .layer-edge .layer-icon { background: rgba(199,70,52,0.2); }
+  .layer-edge .layer-tag { background: rgba(199,70,52,0.2); color: #E8896E; }
+
+  /* Compute — Container Instance */
+  .layer-compute {
+    background: linear-gradient(135deg, rgba(15,52,96,0.5) 0%, rgba(26,26,46,0) 60%);
+    box-shadow: 0 0 30px rgba(15,52,96,0.4), 0 0 0 1px rgba(15,100,200,0.2);
+  }
+  .layer-compute .layer-header { background: rgba(15,52,96,0.4); }
+  .layer-compute .layer-icon { background: rgba(15,52,96,0.6); }
+  .layer-compute .layer-tag { background: rgba(15,100,200,0.2); color: #6BB3F0; }
+
+  /* Auth / IAM */
+  .layer-auth {
+    background: rgba(26,26,46,0.6);
+    box-shadow: 0 0 0 1px rgba(100,160,255,0.12);
+  }
+  .layer-auth .layer-header { background: rgba(100,160,255,0.05); }
+  .layer-auth .layer-icon { background: rgba(100,160,255,0.1); }
+  .layer-auth .layer-tag { background: rgba(100,160,255,0.15); color: #88BBFF; }
+
+  /* NVIDiOCI */
+  .layer-nvidia {
+    background: linear-gradient(135deg, rgba(118,185,0,0.07) 0%, rgba(26,26,46,0) 60%);
+    box-shadow: 0 0 30px var(--glow-nvidia), 0 0 0 1px rgba(118,185,0,0.2);
+    opacity: 0.75;
+  }
+  .layer-nvidia .layer-header { background: rgba(118,185,0,0.1); }
+  .layer-nvidia .layer-icon { background: rgba(118,185,0,0.2); }
+  .layer-nvidia .layer-tag { background: rgba(118,185,0,0.2); color: #A8D44A; }
+
+  /* Deploy CLI */
+  .layer-deploy {
+    background: linear-gradient(135deg, rgba(10,132,255,0.07) 0%, rgba(26,26,46,0) 60%);
+    box-shadow: 0 0 30px var(--glow-deploy), 0 0 0 1px rgba(10,132,255,0.2);
+    opacity: 0.7;
+  }
+  .layer-deploy .layer-header { background: rgba(10,132,255,0.1); }
+  .layer-deploy .layer-icon { background: rgba(10,132,255,0.2); }
+  .layer-deploy .layer-tag { background: rgba(10,132,255,0.2); color: #5FB3FF; }
+
+  /* Monitoring sidebar */
+  .layer-monitor {
+    background: rgba(26,26,46,0.6);
+    box-shadow: 0 0 0 1px rgba(244,162,97,0.15);
+  }
+  .layer-monitor .layer-header { background: rgba(244,162,97,0.06); }
+  .layer-monitor .layer-icon { background: rgba(244,162,97,0.12); }
+  .layer-monitor .layer-tag { background: rgba(244,162,97,0.15); color: var(--free-gold); }
+
+  /* ── Two-column split for ARCSEM services ────────────── */
+  .split-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  /* ── ARCSEM legend ──────────────────────────────────── */
+  .arcsem-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    margin: 24px 0 32px;
+  }
+  .arcsem-pill {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    padding: 5px 14px;
+    border-radius: 20px;
+    border: 1px solid;
+  }
+  .arcsem-a { background: rgba(100,160,255,0.1); border-color: rgba(100,160,255,0.3); color: #88BBFF; }
+  .arcsem-r { background: rgba(255,200,100,0.1); border-color: rgba(255,200,100,0.3); color: #FFD080; }
+  .arcsem-c { background: rgba(15,100,200,0.15); border-color: rgba(15,100,200,0.4); color: #6BB3F0; }
+  .arcsem-s { background: rgba(160,100,255,0.1); border-color: rgba(160,100,255,0.3); color: #C088FF; }
+  .arcsem-e { background: rgba(199,70,52,0.15); border-color: rgba(199,70,52,0.4); color: #E8896E; }
+  .arcsem-m { background: rgba(244,162,97,0.1); border-color: rgba(244,162,97,0.3); color: var(--free-gold); }
+
+  /* ── Tool grid ──────────────────────────────────────── */
+  .tool-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 14px 20px 16px;
+  }
+  .tool-tag {
+    font-size: 11px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.09);
+    border-radius: 5px;
+    padding: 3px 8px;
+    color: var(--text-muted);
+  }
+  .tool-tag.write {
+    background: rgba(118,185,0,0.08);
+    border-color: rgba(118,185,0,0.2);
+    color: #A8D44A;
+  }
+
+  /* ── OCI Tenancy box ────────────────────────────────── */
+  .tenancy-box {
+    border: 1px dashed rgba(199,70,52,0.3);
+    border-radius: 14px;
+    padding: 16px;
+    margin-top: 0;
+    position: relative;
+  }
+  .tenancy-label {
+    position: absolute;
+    top: -10px;
+    left: 16px;
+    background: var(--oracle-dark);
+    padding: 0 8px;
+    font-size: 11px;
+    font-weight: 700;
+    color: rgba(199,70,52,0.8);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
+  /* ── Private subnet badge ───────────────────────────── */
+  .subnet-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--text-muted);
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 20px;
+    padding: 3px 10px;
+    margin-top: 8px;
+  }
+  .subnet-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #4CAF50;
+  }
+
+  /* ── Footer ─────────────────────────────────────────── */
+  .footer {
+    text-align: center;
+    margin-top: 40px;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.7;
+  }
+  .footer a { color: rgba(199,70,52,0.8); text-decoration: none; }
+
+  /* ── Roadmap status dots ────────────────────────────── */
+  .status-live  { color: #4CAF50; }
+  .status-wip   { color: var(--free-gold); }
+  .status-plan  { color: rgba(255,255,255,0.3); }
+
+  @media (max-width: 640px) {
+    .split-row { grid-template-columns: 1fr; }
+    .layer-body { grid-template-columns: 1fr; }
+    .header h1 { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Ok<span>OCI</span> Platform</h1>
+  <p>MCP Context Layer &nbsp;→&nbsp; Inference Gateway &nbsp;→&nbsp; Deploy CLI</p>
+  <div style="margin-top:12px">
+    <span class="badge">v2.5 Live</span>
+    <span class="badge" style="background:rgba(118,185,0,0.1);border-color:rgba(118,185,0,0.3);color:#A8D44A;">NVIDiOCI Roadmap</span>
+    <span class="badge" style="background:rgba(10,132,255,0.1);border-color:rgba(10,132,255,0.3);color:#5FB3FF;">Deploy CLI Roadmap</span>
+  </div>
+</div>
+
+<!-- ARCSEM Legend -->
+<div class="arcsem-legend">
+  <div class="arcsem-pill arcsem-a">A — Auth</div>
+  <div class="arcsem-pill arcsem-r">R — Registry</div>
+  <div class="arcsem-pill arcsem-c">C — Compute</div>
+  <div class="arcsem-pill arcsem-s">S — Secrets</div>
+  <div class="arcsem-pill arcsem-e">E — Edge</div>
+  <div class="arcsem-pill arcsem-m">M — Monitoring</div>
+</div>
+
+<div class="diagram">
+
+  <!-- ── USER / AI AGENT ── -->
+  <div class="layer layer-user">
+    <div class="layer-header">
+      <div class="layer-icon">🤖</div>
+      <div>
+        <div class="layer-title">AI Agent</div>
+        <div class="layer-subtitle">Claude Desktop · Cursor · VS Code · OCI GenAI · LangChain</div>
+      </div>
+      <div class="layer-tag" style="background:rgba(255,255,255,0.08);color:var(--text-muted);">CLIENT</div>
+    </div>
+    <div class="layer-body" style="grid-template-columns:repeat(4,1fr)">
+      <div class="chip"><div class="chip-title">STDIO Transport</div><div class="chip-detail">Local use via uvx — Claude Desktop, Cursor, VS Code</div></div>
+      <div class="chip"><div class="chip-title">HTTP Transport</div><div class="chip-detail">Remote access via OCI API Gateway HTTPS endpoint</div></div>
+      <div class="chip"><div class="chip-title">JWT Bearer Token</div><div class="chip-detail">Contains tenant_id + region claims (v3.0 multi-tenant)</div></div>
+      <div class="chip"><div class="chip-title">MCP Protocol</div><div class="chip-detail">Streamable HTTP or SSE — tool call / response</div></div>
+    </div>
+  </div>
+
+  <div class="connector">
+    <div class="connector-line"></div>
+    <div class="connector-arrow"></div>
+    <div class="connector-label">HTTPS 443 only</div>
+  </div>
+
+  <!-- ── EDGE — API GATEWAY ── -->
+  <div class="layer layer-edge">
+    <div class="layer-header">
+      <div class="layer-icon" style="font-size:16px">E</div>
+      <div>
+        <div class="layer-title">OCI API Gateway</div>
+        <div class="layer-subtitle">Public HTTPS endpoint · JWT auth · rate limiting per tenant</div>
+      </div>
+      <div class="layer-tag">EDGE</div>
+    </div>
+    <div class="layer-body" style="grid-template-columns:repeat(3,1fr)">
+      <div class="chip">
+        <div class="chip-title">JWT Validation</div>
+        <div class="chip-detail">JWKS from auth.okoci.dev · tenant_id + region forwarded as headers</div>
+        <div class="chip-free">v3.0</div>
+      </div>
+      <div class="chip">
+        <div class="chip-title">Rate Limiting</div>
+        <div class="chip-detail">Per tenant_id claim · 100 req/min free tier · configurable</div>
+        <div class="chip-free">v3.0</div>
+      </div>
+      <div class="chip">
+        <div class="chip-title">Routing</div>
+        <div class="chip-detail">/{path*} → Container Instance private IP:8000 · CORS locked</div>
+        <div class="chip-free">FREE 1M req/mo</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="connector">
+    <div class="connector-line"></div>
+    <div class="connector-arrow"></div>
+    <div class="connector-label">VCN-internal · private subnet · port 8000 only</div>
+  </div>
+
+  <!-- ── COMPUTE + SECRETS SPLIT ── -->
+  <div class="split-row">
+
+    <!-- Compute -->
+    <div class="layer layer-compute">
+      <div class="layer-header">
+        <div class="layer-icon" style="font-size:16px">C</div>
+        <div>
+          <div class="layer-title">Container Instance</div>
+          <div class="layer-subtitle">CI.Standard.A1.Flex · ARM64 · private subnet · no public IP</div>
+        </div>
+        <div class="layer-tag">COMPUTE</div>
+      </div>
+      <div class="layer-body" style="grid-template-columns:1fr 1fr">
+        <div class="chip">
+          <div class="chip-title">Shape</div>
+          <div class="chip-detail">CI.Standard.A1.Flex<br>1 OCPU / 6 GB RAM</div>
+          <div class="chip-free">FREE TIER</div>
+        </div>
+        <div class="chip">
+          <div class="chip-title">Image</div>
+          <div class="chip-detail">ARM64 python:3.11-slim<br>pushed via push_to_ocir.sh</div>
+        </div>
+        <div class="chip">
+          <div class="chip-title">NSG Rule</div>
+          <div class="chip-detail">Ingress 8000 from API GW subnet only · egress all</div>
+        </div>
+        <div class="chip">
+          <div class="chip-title">MCP Server</div>
+          <div class="chip-detail">FastAPI + FastMCP<br>69 tools · async/await</div>
+        </div>
+      </div>
+      <div style="padding:0 20px 14px">
+        <div class="subnet-badge"><div class="subnet-dot"></div>Private subnet · 10.0.1.0/24</div>
+      </div>
+    </div>
+
+    <!-- Secrets + Registry -->
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="layer layer-auth" style="flex:1">
+        <div class="layer-header">
+          <div class="layer-icon" style="font-size:16px">S</div>
+          <div>
+            <div class="layer-title">OCI Vault</div>
+            <div class="layer-subtitle">Secrets at rest — never in env vars</div>
+          </div>
+          <div class="layer-tag">SECRETS</div>
+        </div>
+        <div class="layer-body" style="grid-template-columns:1fr 1fr">
+          <div class="chip"><div class="chip-title">nvidia-api-key</div><div class="chip-detail">NVIDiOCI gateway credential</div></div>
+          <div class="chip"><div class="chip-title">db-connection</div><div class="chip-detail">Autonomous DB tenant registry</div><div class="chip-free">FREE TIER</div></div>
+        </div>
+      </div>
+      <div class="layer" style="background:rgba(255,200,100,0.04);border-color:rgba(255,200,100,0.12);flex:1">
+        <div class="layer-header" style="background:rgba(255,200,100,0.05)">
+          <div class="layer-icon" style="background:rgba(255,200,100,0.12);font-size:16px">R</div>
+          <div>
+            <div class="layer-title">OCIR</div>
+            <div class="layer-subtitle">OCI Container Registry — ARM64 image store</div>
+          </div>
+          <div class="layer-tag" style="background:rgba(255,200,100,0.15);color:#FFD080;">REGISTRY</div>
+        </div>
+        <div class="layer-body">
+          <div class="chip"><div class="chip-title">oci-context-mcp</div><div class="chip-detail">ARM64 · tagged by version · pushed via scripts/push_to_ocir.sh</div><div class="chip-free">FREE 500MB</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="connector">
+    <div class="connector-line"></div>
+    <div class="connector-arrow"></div>
+    <div class="connector-label">Instance Principal · cross-tenancy IAM signer</div>
+  </div>
+
+  <!-- ── AUTH — IAM ── -->
+  <div class="layer layer-auth">
+    <div class="layer-header">
+      <div class="layer-icon" style="font-size:16px">A</div>
+      <div>
+        <div class="layer-title">Auth — Instance Principal + Cross-Tenancy IAM</div>
+        <div class="layer-subtitle">No API keys stored · user revokes by deleting one IAM policy</div>
+      </div>
+      <div class="layer-tag">AUTH</div>
+    </div>
+    <div class="layer-body" style="grid-template-columns:repeat(3,1fr)">
+      <div class="chip">
+        <div class="chip-title">Dynamic Group</div>
+        <div class="chip-detail">resource.type = 'computecontainerinstance'<br>Matches Container Instance</div>
+        <div class="chip-free">FREE</div>
+      </div>
+      <div class="chip">
+        <div class="chip-title">Platform IAM Policy</div>
+        <div class="chip-detail">read all-resources in platform tenancy — 69 read tool permissions</div>
+        <div class="chip-free">FREE</div>
+      </div>
+      <div class="chip">
+        <div class="chip-title">Cross-Tenancy (v3.0)</div>
+        <div class="chip-detail">User adds: Allow dynamic-group &lt;okoci-dg&gt; to read all-resources in tenancy</div>
+        <div class="chip-free">v3.0</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="connector">
+    <div class="connector-line"></div>
+    <div class="connector-arrow"></div>
+    <div class="connector-label">OCI SDK calls · 69 tools across 22 services</div>
+  </div>
+
+  <!-- ── OCI TENANCY ── -->
+  <div class="tenancy-box">
+    <div class="tenancy-label">OCI Tenancy — User Resources</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-top:8px">
+      <div class="chip"><div class="chip-title" style="color:#88BBFF">Compute</div><div class="chip-detail">Instances · Shapes · Images · Boot Volumes · OKE · Functions</div></div>
+      <div class="chip"><div class="chip-title" style="color:#88BBFF">Networking</div><div class="chip-detail">VCNs · Subnets · NSGs · LBs · Gateways · DNS · DRGs</div></div>
+      <div class="chip"><div class="chip-title" style="color:#88BBFF">Storage</div><div class="chip-detail">Object · Block · File · Buckets · Objects</div></div>
+      <div class="chip"><div class="chip-title" style="color:#88BBFF">Identity</div><div class="chip-detail">Compartments · Users · Groups · Policies · Vault · Secrets</div></div>
+      <div class="chip"><div class="chip-title" style="color:#88BBFF">Database</div><div class="chip-detail">Autonomous DB · DB Systems · MySQL · NoSQL</div></div>
+      <div class="chip"><div class="chip-title" style="color:#88BBFF">Observability</div><div class="chip-detail">Logs · Metrics · Alarms · Audit · Events · Budgets</div></div>
+      <div class="chip"><div class="chip-title" style="color:#88BBFF">Platform</div><div class="chip-detail">API GW · DevOps · Container Registry · Bastion · OCI GenAI</div></div>
+    </div>
+  </div>
+
+  <!-- ── MONITORING ── -->
+  <div style="margin-top:12px">
+    <div class="layer layer-monitor">
+      <div class="layer-header">
+        <div class="layer-icon" style="font-size:16px">M</div>
+        <div>
+          <div class="layer-title">Monitoring — OCI Logging + Metrics + Alarms</div>
+          <div class="layer-subtitle">Log Group · Custom Log · ONS Topic · 5XX error alarm → denn.stewartjr@gmail.com</div>
+        </div>
+        <div class="layer-tag">MONITORING</div>
+      </div>
+      <div class="layer-body" style="grid-template-columns:repeat(4,1fr)">
+        <div class="chip"><div class="chip-title">Log Group</div><div class="chip-detail">oci-mcp-server-logs · 30-day retention</div><div class="chip-free">FREE TIER</div></div>
+        <div class="chip"><div class="chip-title">Custom Log</div><div class="chip-detail">Application log from Container Instance</div></div>
+        <div class="chip"><div class="chip-title">Local Telemetry</div><div class="chip-detail">oci_mcp_metrics.jsonl · per-tool latency · no data leaves host</div></div>
+        <div class="chip"><div class="chip-title">5XX Alarm</div><div class="chip-detail">>10 errors/5min → ONS email alert · CRITICAL severity</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── DIVIDER — ROADMAP ── -->
+  <div style="margin:32px 0 16px;text-align:center">
+    <div style="display:inline-flex;align-items:center;gap:12px">
+      <div style="height:1px;width:120px;background:rgba(255,255,255,0.08)"></div>
+      <span style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted)">Roadmap Layers</span>
+      <div style="height:1px;width:120px;background:rgba(255,255,255,0.08)"></div>
+    </div>
+  </div>
+
+  <!-- ── NVIDIOCI ── -->
+  <div class="connector">
+    <div class="connector-line" style="background:linear-gradient(to bottom,rgba(118,185,0,0.15),rgba(118,185,0,0.3))"></div>
+    <div class="connector-arrow" style="border-top-color:rgba(118,185,0,0.3)"></div>
+    <div class="connector-label">OCI state snapshot (JSON) · tool: route_inference()</div>
+  </div>
+
+  <div class="layer layer-nvidia">
+    <div class="layer-header">
+      <div class="layer-icon" style="font-size:16px">N</div>
+      <div>
+        <div class="layer-title">NVIDiOCI Inference Gateway</div>
+        <div class="layer-subtitle">NVIDIA NIM + Oracle GenAI + Groq routing — OCI Functions + API Gateway</div>
+      </div>
+      <div class="layer-tag">ROADMAP v3.5</div>
+    </div>
+    <div class="layer-body" style="grid-template-columns:repeat(3,1fr)">
+      <div class="chip">
+        <div class="chip-title">NVIDIA NIM</div>
+        <div class="chip-detail">NGC hosted · Llama 3.1, Mistral, Nemotron · integrate.api.nvidia.com</div>
+      </div>
+      <div class="chip">
+        <div class="chip-title">Oracle GenAI</div>
+        <div class="chip-detail">OCI Generative AI Service · Cohere · native OCI billing</div>
+      </div>
+      <div class="chip">
+        <div class="chip-title">Groq Fallback</div>
+        <div class="chip-detail">Low-latency fallback · provider routing via HeatWave metrics</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="connector">
+    <div class="connector-line" style="background:linear-gradient(to bottom,rgba(10,132,255,0.15),rgba(10,132,255,0.3))"></div>
+    <div class="connector-arrow" style="border-top-color:rgba(10,132,255,0.3)"></div>
+    <div class="connector-label">structured deploy plan JSON · model + confidence + resources</div>
+  </div>
+
+  <!-- ── OKOCI DEPLOY ── -->
+  <div class="layer layer-deploy">
+    <div class="layer-header">
+      <div class="layer-icon" style="font-size:16px">D</div>
+      <div>
+        <div class="layer-title">OkOCI Deploy CLI</div>
+        <div class="layer-subtitle">Provisions OCI resources from AI-generated plans · Terraform + OCI SDK</div>
+      </div>
+      <div class="layer-tag">ROADMAP v4.0</div>
+    </div>
+    <div class="layer-body" style="grid-template-columns:repeat(4,1fr)">
+      <div class="chip"><div class="chip-title">okoci deploy</div><div class="chip-detail">Consume plan.json · provision resources via OCI SDK / Terraform</div></div>
+      <div class="chip"><div class="chip-title">Targets</div><div class="chip-detail">Static site · API server · Container · OKE workload</div></div>
+      <div class="chip"><div class="chip-title">Dry Run</div><div class="chip-detail">--dry-run prints Terraform plan without applying</div></div>
+      <div class="chip"><div class="chip-title">Rollback</div><div class="chip-detail">okoci rollback &lt;deployment-id&gt; · pre-change state preserved</div></div>
+    </div>
+  </div>
+
+</div><!-- /diagram -->
+
+<!-- Tool inventory -->
+<div style="max-width:1100px;margin:32px auto 0">
+  <div style="font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:var(--text-muted);margin-bottom:12px">69 Tools — Current v2.5</div>
+  <div class="tool-grid">
+    <span class="tool-tag">server_health</span><span class="tool-tag">get_tenancy_info</span><span class="tool-tag">list_regions</span>
+    <span class="tool-tag">list_compute_instances</span><span class="tool-tag">list_compute_shapes</span><span class="tool-tag">get_compute_instance</span>
+    <span class="tool-tag">list_images</span><span class="tool-tag">list_boot_volumes</span><span class="tool-tag">list_instance_configurations</span>
+    <span class="tool-tag">get_object_storage_namespace</span><span class="tool-tag">list_buckets</span><span class="tool-tag">list_objects</span><span class="tool-tag">get_bucket_details</span>
+    <span class="tool-tag">list_compartments</span><span class="tool-tag">get_compartment_tree</span><span class="tool-tag">resolve_compartment_by_name</span>
+    <span class="tool-tag">list_users</span><span class="tool-tag">list_groups</span><span class="tool-tag">list_policies</span>
+    <span class="tool-tag">list_vcns</span><span class="tool-tag">list_subnets</span><span class="tool-tag">list_security_lists</span><span class="tool-tag">list_route_tables</span>
+    <span class="tool-tag">list_internet_gateways</span><span class="tool-tag">list_nat_gateways</span><span class="tool-tag">list_service_gateways</span><span class="tool-tag">list_drgs</span>
+    <span class="tool-tag">list_network_security_groups</span><span class="tool-tag">list_load_balancers</span>
+    <span class="tool-tag">list_block_volumes</span><span class="tool-tag">list_file_systems</span>
+    <span class="tool-tag">search_resources</span>
+    <span class="tool-tag">list_autonomous_databases</span><span class="tool-tag">list_db_systems</span>
+    <span class="tool-tag">list_mysql_db_systems</span><span class="tool-tag">list_nosql_tables</span>
+    <span class="tool-tag">list_metric_namespaces</span><span class="tool-tag">query_metrics</span><span class="tool-tag">get_metrics_summary</span>
+    <span class="tool-tag">list_alarms</span><span class="tool-tag">get_alarm_status</span><span class="tool-tag">list_alarm_history</span>
+    <span class="tool-tag">list_log_groups</span><span class="tool-tag">list_logs</span><span class="tool-tag">search_logs</span>
+    <span class="tool-tag">get_usage_summary</span>
+    <span class="tool-tag">list_vaults</span><span class="tool-tag">list_secrets</span>
+    <span class="tool-tag">list_clusters</span><span class="tool-tag">list_node_pools</span>
+    <span class="tool-tag">list_container_instances</span><span class="tool-tag">list_container_repos</span>
+    <span class="tool-tag">list_applications</span><span class="tool-tag">list_functions</span><span class="tool-tag">get_function</span>
+    <span class="tool-tag">list_event_rules</span><span class="tool-tag">list_notification_topics</span><span class="tool-tag">list_notification_subscriptions</span>
+    <span class="tool-tag">list_dns_zones</span><span class="tool-tag">list_dns_zone_records</span><span class="tool-tag">list_steering_policies</span>
+    <span class="tool-tag">list_budgets</span><span class="tool-tag">get_budget</span>
+    <span class="tool-tag">list_audit_events</span>
+    <span class="tool-tag">list_api_gateways</span><span class="tool-tag">list_api_deployments</span>
+    <span class="tool-tag">list_bastions</span><span class="tool-tag">list_bastion_sessions</span>
+    <span class="tool-tag">list_devops_projects</span>
+    <span class="tool-tag write">launch_instance (F4)</span><span class="tool-tag write">terminate_instance (F4)</span><span class="tool-tag write">create_bucket (F4)</span>
+  </div>
+</div>
+
+<div class="footer">
+  <p>OkOCI Platform · <a href="https://github.com/Dennesssy/oci-context-mcp">github.com/Dennesssy/oci-context-mcp</a></p>
+  <p style="margin-top:4px">Not affiliated with or endorsed by Oracle Corporation or NVIDIA Corporation.</p>
+  <p style="margin-top:4px">"Oracle", "OCI" are trademarks of Oracle Corporation. "NVIDIA", "NIM" are trademarks of NVIDIA Corporation.</p>
+</div>
+
+</body>
+</html>
