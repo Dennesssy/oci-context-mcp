@@ -11,4 +11,5 @@ COPY mcp_server.py .
 
 EXPOSE 8000
 
-CMD ["uvicorn", "mcp_server:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+# Single worker: OCIAuthManager holds async OCI SDK clients — not safe to fork across workers.
+CMD ["uvicorn", "mcp_server:app", "--host", "0.0.0.0", "--port", "8000"]
