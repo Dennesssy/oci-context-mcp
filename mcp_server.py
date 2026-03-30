@@ -223,12 +223,24 @@ app = FastAPI(title="Oracle Context MCP Server", version="2.0.0")
 _allowed_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:8000").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=_allowed_origins, allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type"])
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
+from starlette.responses import JSONResponse
 
-async def verify_iam_token(authorization: Optional[str] = Header(None)):
-    return {"auth_mode": "InstancePrincipal" if auth_manager.using_instance_principal else "OAuth2"}
 
-mcp = FastMCP("oci-context-server", dependencies=[Depends(verify_iam_token)])
+class MCPAuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: StarletteRequest, call_next):
+        if request.url.path.startswith("/mcp"):
+            if not auth_manager.using_instance_principal:
+                auth_header = request.headers.get("Authorization", "")
+                if not auth_header.startswith("Bearer "):
+                    return JSONResponse({"detail": "Authorization header required"}, status_code=401)
+        return await call_next(request)
+
+
+app.add_middleware(MCPAuthMiddleware)
+
+mcp = FastMCP("oci-context-server")
 
 # ====================== HELPER: Get root compartment ======================
 async def get_root_compartment() -> str:
