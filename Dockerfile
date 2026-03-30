@@ -1,6 +1,6 @@
 # Target ARM64 — matches CI.Standard.A1.Flex shape on OCI free tier.
 # Build: docker buildx build --platform linux/arm64 -t <image> .
-FROM --platform=linux/arm64 python:3.11-slim
+FROM --platform=linux/arm64 python:3.14-slim
 
 WORKDIR /app
 
