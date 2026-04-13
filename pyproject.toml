@@ -17,7 +17,7 @@ classifiers = [
 ]
 dependencies = [
     "fastapi>=0.115.6",
-    "uvicorn[standard]>=0.34.0",
+    "uvicorn[standard]>=0.44.0",
     "mcp[server]>=1.0.0",
     "oci>=2.167.2",
     "pydantic>=2.10.3",
